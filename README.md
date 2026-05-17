@@ -25,10 +25,32 @@ A personal autonomous agent connecting to Gmail, Google Calendar, GitHub, and No
 ## Setup Instructions
 
 ### Environment Variables
-Copy `.env.example` to `.env` and fill out your secrets:
+Copy `backend/.env.example` to `backend/.env` and fill out your backend secrets:
 - Gemini API key
-- OAuth keys for Gmail and Google Calendar
-- Personal Access Tokens / API Keys for GitHub and Notion
+- Google OAuth client ID/secret for Gmail and Calendar
+- `GOOGLE_REFRESH_TOKEN` after completing the local Google OAuth flow
+- GitHub personal access token
+- Notion API key
+- `NOTION_PARENT_PAGE_ID` or `NOTION_DATABASE_ID` if you want NexusAI to create Notion pages
+
+For local frontend development, copy `frontend/.env.example` to `frontend/.env`.
+
+### Google OAuth
+1. Start the backend.
+2. Request an auth URL:
+   ```bash
+   curl -X POST http://localhost:8000/auth/google/url \
+     -H "Content-Type: application/json" \
+     -d '{"redirect_uri":"http://localhost:8000/auth/google/callback"}'
+   ```
+3. Open the returned URL, approve access, and copy the returned `refresh_token`.
+4. Add it to `backend/.env` as `GOOGLE_REFRESH_TOKEN`, then restart the backend.
+
+### Integration Status
+Check which integrations are active:
+```bash
+curl http://localhost:8000/integrations/status
+```
 
 ### Backend
 Required tools: Python 3.10+

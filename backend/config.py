@@ -8,8 +8,11 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gmail_client_id: str = ""
     gmail_client_secret: str = ""
+    google_refresh_token: str = ""
     github_token: str = ""
     notion_api_key: str = ""
+    notion_parent_page_id: str = ""
+    notion_database_id: str = ""
     google_calendar_client_id: str = ""
     google_calendar_client_secret: str = ""
 

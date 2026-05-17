@@ -4,6 +4,7 @@ import uuid
 from typing import Dict, AsyncGenerator
 from agent.memory import memory_manager
 from config import settings
+from integrations import gmail_client, calendar_client, github_client, notion_client
 
 class Agent:
     def __init__(self):
@@ -15,10 +16,202 @@ class Agent:
         pass
 
     async def get_tools(self):
-        return []
+        tools = []
+        if gmail_client.is_configured():
+            tools.extend([
+                {
+                    "name": "gmail__list_unread_emails",
+                    "description": "List unread Gmail messages with sender, subject, date, snippet, and estimated count.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Gmail search query. Defaults to is:unread."},
+                            "max_results": {"type": "integer", "description": "Maximum emails to return, 1-25."}
+                        },
+                    },
+                },
+                {
+                    "name": "gmail__get_email",
+                    "description": "Get a Gmail message by message ID.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "message_id": {"type": "string"}
+                        },
+                        "required": ["message_id"],
+                    },
+                },
+                {
+                    "name": "gmail__send_email",
+                    "description": "Send an email from the connected Gmail account.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "to": {"type": "string"},
+                            "subject": {"type": "string"},
+                            "body": {"type": "string"},
+                        },
+                        "required": ["to", "subject", "body"],
+                    },
+                },
+            ])
+        if calendar_client.is_configured():
+            tools.extend([
+                {
+                    "name": "calendar__list_events",
+                    "description": "List Google Calendar events from the connected calendar.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "calendar_id": {"type": "string", "description": "Calendar ID. Defaults to primary."},
+                            "time_min": {"type": "string", "description": "RFC3339 lower bound."},
+                            "time_max": {"type": "string", "description": "RFC3339 upper bound."},
+                            "max_results": {"type": "integer"},
+                        },
+                    },
+                },
+                {
+                    "name": "calendar__schedule_event",
+                    "description": "Create a Google Calendar event.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "start_time": {"type": "string", "description": "RFC3339 date-time, e.g. 2026-05-18T10:00:00+05:30."},
+                            "end_time": {"type": "string", "description": "RFC3339 date-time."},
+                            "calendar_id": {"type": "string"},
+                            "timezone_name": {"type": "string"},
+                            "description": {"type": "string"},
+                        },
+                        "required": ["title", "start_time", "end_time"],
+                    },
+                },
+            ])
+        if github_client.is_configured():
+            tools.extend([
+                {
+                    "name": "github__list_issues",
+                    "description": "List issues for a GitHub repository in owner/repo format.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "repo": {"type": "string", "description": "Repository in owner/repo format."},
+                            "state": {"type": "string", "description": "open, closed, or all."},
+                            "limit": {"type": "integer"},
+                        },
+                        "required": ["repo"],
+                    },
+                },
+                {
+                    "name": "github__get_issue",
+                    "description": "Get one GitHub issue by number.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "repo": {"type": "string"},
+                            "issue_number": {"type": "integer"},
+                        },
+                        "required": ["repo", "issue_number"],
+                    },
+                },
+                {
+                    "name": "github__create_issue",
+                    "description": "Create a GitHub issue.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "repo": {"type": "string"},
+                            "title": {"type": "string"},
+                            "body": {"type": "string"},
+                        },
+                        "required": ["repo", "title"],
+                    },
+                },
+            ])
+        if notion_client.is_configured():
+            tools.extend([
+                {
+                    "name": "notion__search",
+                    "description": "Search pages/databases visible to the connected Notion integration.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string"},
+                            "limit": {"type": "integer"},
+                        },
+                    },
+                },
+                {
+                    "name": "notion__create_page",
+                    "description": "Create a Notion page using NOTION_DATABASE_ID, NOTION_PARENT_PAGE_ID, or an explicit parent page ID.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "content": {"type": "string"},
+                            "parent_id": {"type": "string"},
+                        },
+                        "required": ["title"],
+                    },
+                },
+            ])
+        return tools
 
     async def call_tool(self, name: str, args: dict) -> str:
-        raise RuntimeError(f"{name} is not connected to a real integration yet.")
+        if name == "gmail__list_unread_emails":
+            result = await gmail_client.list_unread_emails(
+                query=args.get("query") or "is:unread",
+                max_results=int(args.get("max_results") or 10),
+            )
+        elif name == "gmail__get_email":
+            result = await gmail_client.get_email(args["message_id"])
+        elif name == "gmail__send_email":
+            result = await gmail_client.send_email(args["to"], args["subject"], args["body"])
+        elif name == "calendar__list_events":
+            result = await calendar_client.list_events(
+                calendar_id=args.get("calendar_id") or "primary",
+                time_min=args.get("time_min"),
+                time_max=args.get("time_max"),
+                max_results=int(args.get("max_results") or 10),
+            )
+        elif name == "calendar__schedule_event":
+            result = await calendar_client.schedule_event(
+                title=args["title"],
+                start_time=args["start_time"],
+                end_time=args["end_time"],
+                calendar_id=args.get("calendar_id") or "primary",
+                timezone_name=args.get("timezone_name") or "Asia/Kolkata",
+                description=args.get("description") or "",
+            )
+        elif name == "github__list_issues":
+            result = await github_client.list_issues(
+                repo=args["repo"],
+                state=args.get("state") or "open",
+                limit=int(args.get("limit") or 10),
+            )
+        elif name == "github__get_issue":
+            result = await github_client.get_issue(args["repo"], int(args["issue_number"]))
+        elif name == "github__create_issue":
+            result = await github_client.create_issue(
+                repo=args["repo"],
+                title=args["title"],
+                body=args.get("body") or "",
+            )
+        elif name == "notion__search":
+            result = await notion_client.search(
+                query=args.get("query") or "",
+                limit=int(args.get("limit") or 10),
+            )
+        elif name == "notion__create_page":
+            result = await notion_client.create_page(
+                title=args["title"],
+                content=args.get("content") or "",
+                parent_id=args.get("parent_id"),
+            )
+        else:
+            raise RuntimeError(f"Unknown tool: {name}")
+
+        return json.dumps(result, ensure_ascii=False)
 
     async def process_message(self, message: str) -> AsyncGenerator[str, None]:
         from google import genai
@@ -49,7 +242,10 @@ class Agent:
             "No external integrations are connected in this running build. "
             "You cannot read Gmail, GitHub, Notion, or Google Calendar yet."
             if not available_tools
-            else "External integrations are available only through the provided tools."
+            else (
+                "External integrations are available only through the provided tools. "
+                f"Available tools: {', '.join(tool['name'] for tool in available_tools)}."
+            )
         )
 
         system_prompt = (

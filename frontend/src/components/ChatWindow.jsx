@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from "react";
 import { Send, Bot, User, Loader2 } from "lucide-react";
 import ToolBadge from "./ToolBadge";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
 export default function ChatWindow({ onRequireApproval, onTaskComplete }) {
   const [messages, setMessages] = useState([
     { role: "assistant", content: "Hi! I'm NexusAI, your autonomous agent. What would you like me to do?", type: "text" }
@@ -9,6 +11,7 @@ export default function ChatWindow({ onRequireApproval, onTaskComplete }) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const requestInFlightRef = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -18,11 +21,21 @@ export default function ChatWindow({ onRequireApproval, onTaskComplete }) {
     scrollToBottom();
   }, [messages]);
 
+  const updateLastMessage = (updater) => {
+    setMessages(prev => {
+      const lastIndex = prev.length - 1;
+      return prev.map((message, index) => (
+        index === lastIndex ? updater(message) : message
+      ));
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || requestInFlightRef.current) return;
 
     const userMsg = input.trim();
+    requestInFlightRef.current = true;
     setInput("");
     
     // Add user message to UI
@@ -33,11 +46,15 @@ export default function ChatWindow({ onRequireApproval, onTaskComplete }) {
     setMessages(prev => [...prev, { role: "assistant", content: "", tools: [], type: "mixed", statusContext: "Thinking..." }]);
 
     try {
-      const response = await fetch("http://localhost:8000/chat", {
+      const response = await fetch(`${API_BASE_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: userMsg })
       });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`Backend returned ${response.status}`);
+      }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -53,48 +70,65 @@ export default function ChatWindow({ onRequireApproval, onTaskComplete }) {
           try {
             const data = JSON.parse(line);
             
-            setMessages(prev => {
-              const newMessages = [...prev];
-              const msgIndex = newMessages.length - 1;
-              const msg = newMessages[msgIndex];
-              
+            updateLastMessage(msg => {
               if (data.type === "text") {
-                msg.content += (msg.content ? "\n" : "") + data.content;
-                msg.statusContext = null;
+                return {
+                  ...msg,
+                  content: msg.content ? `${msg.content}\n${data.content}` : data.content,
+                  statusContext: null
+                };
               } else if (data.type === "tool_start") {
-                msg.tools.push({ name: data.tool, status: "pending", input: data.input });
-                msg.statusContext = `Using ${data.tool}...`;
+                return {
+                  ...msg,
+                  tools: [...(msg.tools || []), { name: data.tool, status: "pending", input: data.input }],
+                  statusContext: `Using ${data.tool}...`
+                };
               } else if (data.type === "tool_result" || data.type === "tool_error") {
-                // Update latest matching pending tool
-                let targetIdx = msg.tools.length - 1;
+                const tools = [...(msg.tools || [])];
+                let targetIdx = tools.length - 1;
                 while (targetIdx >= 0) {
-                  if (msg.tools[targetIdx].name === data.tool && (msg.tools[targetIdx].status === "pending" || msg.tools[targetIdx].status === "paused")) {
+                  if (tools[targetIdx].name === data.tool && (tools[targetIdx].status === "pending" || tools[targetIdx].status === "paused")) {
                     break;
                   }
                   targetIdx--;
                 }
                 
                 if (targetIdx >= 0) {
-                  msg.tools[targetIdx].status = data.status || (data.type === "tool_result" ? "success" : "error");
-                  msg.tools[targetIdx].result = data.result || data.error;
+                  tools[targetIdx] = {
+                    ...tools[targetIdx],
+                    status: data.status || (data.type === "tool_result" ? "success" : "error"),
+                    result: data.result || data.error
+                  };
                 }
-                msg.statusContext = "Evaluating results...";
+                return {
+                  ...msg,
+                  tools,
+                  statusContext: "Evaluating results..."
+                };
               } else if (data.type === "pause") {
-                  let targetIdx = msg.tools.length - 1;
-                  while (targetIdx >= 0) {
-                    if (msg.tools[targetIdx].name === data.tool && msg.tools[targetIdx].status === "pending") break;
-                    targetIdx--;
-                  }
-                  if (targetIdx >= 0) {
-                      msg.tools[targetIdx].status = "paused";
-                  }
-                  msg.statusContext = "Waiting for your approval...";
-                  onRequireApproval({ callId: data.call_id, tool: data.tool, input: data.input });
+                const tools = [...(msg.tools || [])];
+                let targetIdx = tools.length - 1;
+                while (targetIdx >= 0) {
+                  if (tools[targetIdx].name === data.tool && tools[targetIdx].status === "pending") break;
+                  targetIdx--;
+                }
+                if (targetIdx >= 0) {
+                  tools[targetIdx] = { ...tools[targetIdx], status: "paused" };
+                }
+                onRequireApproval({ callId: data.call_id, tool: data.tool, input: data.input });
+                return {
+                  ...msg,
+                  tools,
+                  statusContext: "Waiting for your approval..."
+                };
               } else if (data.type === "status") {
-                  msg.statusContext = data.content;
+                return {
+                  ...msg,
+                  statusContext: data.content
+                };
               }
               
-              return newMessages;
+              return msg;
             });
           } catch (e) {
             console.error("Failed to parse SSE line", line, e);
@@ -102,18 +136,18 @@ export default function ChatWindow({ onRequireApproval, onTaskComplete }) {
         }
       }
       
-      setMessages(prev => {
-          const newMessages = [...prev];
-          const lastIndex = newMessages.length - 1;
-          newMessages[lastIndex].statusContext = null;
-          return newMessages;
-      });
+      updateLastMessage(msg => ({ ...msg, statusContext: null }));
       
       onTaskComplete();
     } catch (err) {
       console.error(err);
-      setMessages(prev => [...prev, { role: "assistant", content: "Sorry, an error occurred communicating with the server.", type: "text" }]);
+      updateLastMessage(msg => ({
+          ...msg,
+          content: "Backend is not reachable. Start the FastAPI server on port 8000, then try again.",
+          statusContext: null
+      }));
     } finally {
+      requestInFlightRef.current = false;
       setIsLoading(false);
     }
   };
