@@ -15,57 +15,48 @@ class Agent:
         pass
 
     async def get_tools(self):
-        return [
-                {
-                    "name": "gmail__read_emails",
-                    "description": "Read unread emails",
-                    "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}}
-                },
-                {
-                    "name": "gmail__send_email",
-                    "description": "Send an email",
-                    "input_schema": {"type": "object", "properties": {"to": {"type": "string"}, "body": {"type": "string"}}}
-                },
-                {
-                    "name": "github__list_issues",
-                    "description": "Read github issues",
-                    "input_schema": {"type": "object", "properties": {"repo": {"type": "string"}}}
-                },
-                {
-                    "name": "notion__create_page",
-                    "description": "Create a notion page",
-                    "input_schema": {"type": "object", "properties": {"title": {"type": "string"}, "content": {"type": "string"}}}
-                },
-                {
-                    "name": "calendar__schedule_event",
-                    "description": "Schedule a calendar event",
-                    "input_schema": {"type": "object", "properties": {"title": {"type": "string"}, "time": {"type": "string"}}}
-                }
-            ]
+        return []
 
     async def call_tool(self, name: str, args: dict) -> str:
-        await asyncio.sleep(2)
-        if "read_emails" in name:
-            return "You have 1 unread email from your boss asking about the GitHub issue #42."
-        elif "list_issues" in name:
-            return "Issue #42: Fix memory leak in production. Overdue by 2 days."
-        elif "schedule_event" in name:
-            return "Event scheduled for tomorrow."
-        return f"Simulated success for {name} with args {args}"
+        raise RuntimeError(f"{name} is not connected to a real integration yet.")
 
     async def process_message(self, message: str) -> AsyncGenerator[str, None]:
         from google import genai
         from google.genai import types
-        
+
+        if not settings.gemini_api_key:
+            yield json.dumps({
+                "type": "text",
+                "content": "Gemini is not configured yet. Add GEMINI_API_KEY to backend/.env, then restart the backend server."
+            }) + "\n"
+            return
+
         if not hasattr(self, "gemini_client"):
-            self.gemini_client = genai.Client(api_key=settings.gemini_api_key)
+            try:
+                self.gemini_client = genai.Client(api_key=settings.gemini_api_key)
+            except Exception as e:
+                yield json.dumps({
+                    "type": "text",
+                    "content": f"Gemini client setup failed: {e}"
+                }) + "\n"
+                return
             
         if message:
             memory_manager.add_message("user", message)
-            
+
+        available_tools = await self.get_tools()
+        integration_status = (
+            "No external integrations are connected in this running build. "
+            "You cannot read Gmail, GitHub, Notion, or Google Calendar yet."
+            if not available_tools
+            else "External integrations are available only through the provided tools."
+        )
+
         system_prompt = (
-            "You are NexusAI, an autonomous agent. You connect to Gmail, GitHub, Notion, "
-            "and Google Calendar via Tools. Break tasks down. ALWAYS wait for results after calling a tool."
+            "You are NexusAI, an autonomous agent. Only claim external facts from actual tool results. "
+            "If Gmail, GitHub, Notion, or Google Calendar tools are unavailable or not connected, say so plainly. "
+            "Never invent emails, issues, calendar events, Notion pages, senders, counts, or message contents. "
+            f"{integration_status}"
         )
         
         while True:
@@ -88,7 +79,6 @@ class Agent:
                             parts.append(types.Part.from_function_response(name=c.get("tool", "unknown"), response={"result": c["content"]}))
                     gemini_history.append(types.Content(role=role, parts=parts))
 
-            available_tools = await self.get_tools()
             gemini_tools = []
             for t in available_tools:
                 gemini_tools.append(types.FunctionDeclaration(
@@ -96,19 +86,26 @@ class Agent:
                     description=t["description"],
                     parameters=t["input_schema"]
                 ))
-            tool_config = types.Tool(function_declarations=gemini_tools)
+            tools = [types.Tool(function_declarations=gemini_tools)] if gemini_tools else None
             
             config = types.GenerateContentConfig(
                 system_instruction=system_prompt,
-                tools=[tool_config],
+                tools=tools,
                 temperature=0.0
             )
             
-            response = self.gemini_client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=gemini_history,
-                config=config
-            )
+            try:
+                response = self.gemini_client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=gemini_history,
+                    config=config
+                )
+            except Exception as e:
+                yield json.dumps({
+                    "type": "text",
+                    "content": f"Gemini request failed: {e}"
+                }) + "\n"
+                return
             
             assistant_content = []
             text_blocks = []
