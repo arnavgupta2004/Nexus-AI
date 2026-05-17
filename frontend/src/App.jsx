@@ -2,6 +2,8 @@ import { useState } from "react";
 import ChatWindow from "./components/ChatWindow";
 import MemoryPanel from "./components/MemoryPanel";
 import HumanApproval from "./components/HumanApproval";
+import AppHeader from "./components/AppHeader";
+import { apiPost } from "./lib/api";
 
 function App() {
   const [pendingAction, setPendingAction] = useState(null);
@@ -13,11 +15,7 @@ function App() {
 
   const handleApprove = async (callId) => {
     try {
-      await fetch("http://localhost:8000/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ call_id: callId })
-      });
+      await apiPost("/approve", { call_id: callId });
       setPendingAction(null);
     } catch (e) {
       console.error(e);
@@ -26,11 +24,7 @@ function App() {
 
   const handleReject = async (callId) => {
     try {
-      await fetch("http://localhost:8000/reject", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ call_id: callId })
-      });
+      await apiPost("/reject", { call_id: callId });
       setPendingAction(null);
     } catch (e) {
       console.error(e);
@@ -38,21 +32,25 @@ function App() {
   };
 
   const handleTaskComplete = () => {
-    // trigger memory panel refresh
-    setRefreshTasks(prev => prev + 1);
+    setRefreshTasks((prev) => prev + 1);
   };
 
   return (
-    <div className="flex h-screen w-full bg-[#09090b] text-zinc-100 font-sans overflow-hidden selection:bg-emerald-500/30">
+    <div className="relative flex h-screen w-full overflow-hidden bg-surface-950 text-surface-100">
+      <div className="pointer-events-none absolute inset-0 ambient-glow" aria-hidden />
+
       <MemoryPanel refreshTrigger={refreshTasks} />
-      
-      <ChatWindow 
-        onRequireApproval={handleRequireApproval} 
-        onTaskComplete={handleTaskComplete} 
-      />
+
+      <main className="relative flex flex-1 flex-col min-w-0">
+        <AppHeader />
+        <ChatWindow
+          onRequireApproval={handleRequireApproval}
+          onTaskComplete={handleTaskComplete}
+        />
+      </main>
 
       {pendingAction && (
-        <HumanApproval 
+        <HumanApproval
           callId={pendingAction.callId}
           tool={pendingAction.tool}
           input={pendingAction.input}
