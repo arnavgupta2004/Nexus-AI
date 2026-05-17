@@ -45,7 +45,7 @@ export default function MemoryPanel({ refreshTrigger }) {
         )}
       </div>
       <div className="p-4 border-t border-zinc-800 text-xs text-zinc-600 font-mono text-center">
-        Powered by SQLite & Claude
+        Powered by SQLite & Gemini
       </div>
     </div>
   );

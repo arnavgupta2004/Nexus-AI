@@ -1,14 +1,12 @@
 import json
 import asyncio
 import uuid
-from typing import Dict, Any, AsyncGenerator
-from anthropic import AsyncAnthropic
+from typing import Dict, AsyncGenerator
 from agent.memory import memory_manager
 from config import settings
 
 class Agent:
     def __init__(self):
-        self.client = AsyncAnthropic(api_key=settings.anthropic_api_key)
         self.pending_actions: Dict[str, asyncio.Event] = {}
         self.action_results: Dict[str, str] = {}
         self.mcp_clients = {}
@@ -55,93 +53,7 @@ class Agent:
             return "Event scheduled for tomorrow."
         return f"Simulated success for {name} with args {args}"
 
-    async def process_message(self, message: str, provider: str = "gemini") -> AsyncGenerator[str, None]:
-        if provider == "gemini":
-            async for chunk in self.process_message_gemini(message):
-                yield chunk
-            return
-
-        if message:
-            memory_manager.add_message("user", message)
-        
-        system_prompt = (
-            "You are NexusAI, an autonomous agent. You connect to Gmail, GitHub, Notion, "
-            "and Google Calendar via Tools. Break tasks down. ALWAYS wait for results after calling a tool."
-        )
-        
-        while True:
-            history = memory_manager.get_history()
-            
-            yield json.dumps({"type": "status", "content": "Thinking..."}) + "\n"
-            
-            response = await self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=2048,
-                system=system_prompt,
-                messages=history,
-                tools=await self.get_tools()
-            )
-            
-            assistant_content = []
-            for block in response.content:
-                if block.type == "text":
-                    assistant_content.append({"type": "text", "text": block.text})
-                elif block.type == "tool_use":
-                    assistant_content.append({
-                        "type": "tool_use",
-                        "id": block.id,
-                        "name": block.name,
-                        "input": block.input
-                    })
-                    
-            memory_manager.add_message("assistant", assistant_content)
-            
-            tool_calls = [c for c in response.content if c.type == "tool_use"]
-            text_blocks = [c.text for c in response.content if c.type == "text"]
-            
-            if text_blocks:
-                yield json.dumps({"type": "text", "content": "\n".join(text_blocks)}) + "\n"
-            
-            if not tool_calls:
-                break
-                
-            tool_results = []
-            for tool_call in tool_calls:
-                yield json.dumps({"type": "tool_start", "tool": tool_call.name, "input": tool_call.input}) + "\n"
-                
-                is_write = any(w in tool_call.name.lower() for w in ["write", "send", "create", "update", "delete", "post", "add", "schedule"])
-                
-                if is_write:
-                    call_id = tool_call.id
-                    event = asyncio.Event()
-                    self.pending_actions[call_id] = event
-                    self.action_results[call_id] = None
-                    
-                    yield json.dumps({"type": "pause", "call_id": call_id, "tool": tool_call.name, "input": tool_call.input}) + "\n"
-                    
-                    await event.wait()
-                    
-                    decision = self.action_results.pop(call_id)
-                    del self.pending_actions[call_id]
-                    
-                    if decision == "rejected":
-                        result = "User REJECTED this action. Do not try again."
-                        yield json.dumps({"type": "tool_result", "tool": tool_call.name, "result": result, "status": "rejected"}) + "\n"
-                        tool_results.append({"type": "tool_result", "tool_use_id": call_id, "content": result})
-                        continue
-                
-                try:
-                    res = await self.call_tool(tool_call.name, tool_call.input)
-                    yield json.dumps({"type": "tool_result", "tool": tool_call.name, "result": res, "status": "success"}) + "\n"
-                    tool_results.append({"type": "tool_result", "tool_use_id": tool_call.id, "content": res})
-                except Exception as e:
-                    error_msg = f"Error: {e}"
-                    yield json.dumps({"type": "tool_error", "tool": tool_call.name, "error": error_msg}) + "\n"
-                    tool_results.append({"type": "tool_result", "tool_use_id": tool_call.id, "content": error_msg})
-            
-            memory_manager.add_message("user", tool_results)
-
-    async def process_message_gemini(self, message: str) -> AsyncGenerator[str, None]:
+    async def process_message(self, message: str) -> AsyncGenerator[str, None]:
         from google import genai
         from google.genai import types
         
@@ -176,9 +88,9 @@ class Agent:
                             parts.append(types.Part.from_function_response(name=c.get("tool", "unknown"), response={"result": c["content"]}))
                     gemini_history.append(types.Content(role=role, parts=parts))
 
-            anthropic_tools = await self.get_tools()
+            available_tools = await self.get_tools()
             gemini_tools = []
-            for t in anthropic_tools:
+            for t in available_tools:
                 gemini_tools.append(types.FunctionDeclaration(
                     name=t["name"],
                     description=t["description"],

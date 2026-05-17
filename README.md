@@ -7,7 +7,7 @@ A personal autonomous agent connecting to Gmail, Google Calendar, GitHub, and No
 ```text
 +-----------------------+      +---------------------------+       +-------------------+
 |                       |      |                           |       |                   |
-|  React + Tailwind UI  | <==> |  FastAPI + Claude Agent   | <===> | SQLite Memory DB  |
+|  React + Tailwind UI  | <==> |  FastAPI + Gemini Agent   | <===> | SQLite Memory DB  |
 |                       |      |                           |       |                   |
 +-------------------+---+      +-------------+-------------+       +-------------------+
                     |                        |
@@ -26,7 +26,7 @@ A personal autonomous agent connecting to Gmail, Google Calendar, GitHub, and No
 
 ### Environment Variables
 Copy `.env.example` to `.env` and fill out your secrets:
-- Anthropic API Key for Claude
+- Gemini API key
 - OAuth keys for Gmail and Google Calendar
 - Personal Access Tokens / API Keys for GitHub and Notion
 
@@ -59,5 +59,5 @@ Required tools: Node 18+, npm
 ## Tech Stack
 - Frontend: React + Tailwind CSS
 - Backend: Python + FastAPI
-- Agent Brain: Claude API
+- Agent Brain: Gemini API
 - Tools: Model Context Protocol (MCP) clients connecting to external services.

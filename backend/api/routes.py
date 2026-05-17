@@ -18,7 +18,6 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     message: str
-    model: str = "gemini"
 
 class ApprovalRequest(BaseModel):
     call_id: str
@@ -26,7 +25,7 @@ class ApprovalRequest(BaseModel):
 @app.post("/chat")
 async def chat(request: ChatRequest):
     return StreamingResponse(
-        nexus_agent.process_message(request.message, request.model),
+        nexus_agent.process_message(request.message),
         media_type="text/event-stream"
     )
 

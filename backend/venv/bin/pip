@@ -1,5 +1,5 @@
 #!/bin/sh
-'''exec' "/Users/arnavgupta/Documents/Arnav/Projects/Nexus AI/backend/venv/bin/python3" "$0" "$@"
+'''exec' "/Users/arnavgupta/Documents/Arnav/Projects/Nexus AI/backend/venv/bin/python3.12" "$0" "$@"
 ' '''
 # -*- coding: utf-8 -*-
 import re

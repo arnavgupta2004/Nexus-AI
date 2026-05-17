@@ -7,7 +7,6 @@ export default function ChatWindow({ onRequireApproval, onTaskComplete }) {
     { role: "assistant", content: "Hi! I'm NexusAI, your autonomous agent. What would you like me to do?", type: "text" }
   ]);
   const [input, setInput] = useState("");
-  const [modelChoice, setModelChoice] = useState("gemini");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
 
@@ -37,7 +36,7 @@ export default function ChatWindow({ onRequireApproval, onTaskComplete }) {
       const response = await fetch("http://localhost:8000/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMsg, model: modelChoice })
+        body: JSON.stringify({ message: userMsg })
       });
 
       const reader = response.body.getReader();
@@ -161,15 +160,6 @@ export default function ChatWindow({ onRequireApproval, onTaskComplete }) {
 
       <div className="p-6 bg-gradient-to-t from-[#09090b] via-[#09090b] to-transparent">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto flex gap-3 relative group">
-          <select 
-            value={modelChoice} 
-            onChange={(e) => setModelChoice(e.target.value)}
-            disabled={isLoading}
-            className="bg-zinc-800/80 border border-zinc-700 text-zinc-300 text-sm rounded-2xl px-4 py-4 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 cursor-pointer disabled:opacity-50"
-          >
-            <option value="gemini">Gemini 2.5 Flash</option>
-            <option value="claude">Claude 3.5 Sonnet</option>
-          </select>
           <div className="relative flex-1">
             <input
               type="text"
@@ -189,7 +179,7 @@ export default function ChatWindow({ onRequireApproval, onTaskComplete }) {
           </div>
         </form>
         <p className="text-center text-xs text-zinc-500 mt-4 font-medium tracking-wide">
-          Agent capabilities powered by Claude 3.5 Sonnet + Model Context Protocol
+          Agent capabilities powered by Gemini + Model Context Protocol
         </p>
       </div>
     </div>

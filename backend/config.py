@@ -1,7 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    anthropic_api_key: str = ""
     gemini_api_key: str = ""
     gmail_client_id: str = ""
     gmail_client_secret: str = ""
