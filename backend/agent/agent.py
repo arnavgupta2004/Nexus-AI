@@ -16,7 +16,28 @@ class Agent:
         pass
 
     async def get_tools(self):
-        tools = []
+        tools = [
+            {
+                "name": "memory__save_preference",
+                "description": "Save a durable user preference or stable fact the user explicitly asks NexusAI to remember.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string", "description": "Short stable key, e.g. preferred_github_repo."},
+                        "value": {"type": "string", "description": "Preference or fact to remember."},
+                    },
+                    "required": ["key", "value"],
+                },
+            },
+            {
+                "name": "memory__get_preferences",
+                "description": "Read saved durable user preferences.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {},
+                },
+            },
+        ]
         if gmail_client.is_configured():
             tools.extend([
                 {
@@ -163,6 +184,11 @@ class Agent:
                 query=args.get("query") or "is:unread",
                 max_results=int(args.get("max_results") or 10),
             )
+        elif name == "memory__save_preference":
+            memory_manager.save_preference(args["key"], args["value"])
+            result = {"saved": True, "key": args["key"], "value": args["value"]}
+        elif name == "memory__get_preferences":
+            result = memory_manager.get_preferences()
         elif name == "gmail__get_email":
             result = await gmail_client.get_email(args["message_id"])
         elif name == "gmail__send_email":
@@ -238,23 +264,59 @@ class Agent:
             memory_manager.add_message("user", message)
 
         available_tools = await self.get_tools()
+        external_tools = [tool for tool in available_tools if not tool["name"].startswith("memory__")]
         integration_status = (
             "No external integrations are connected in this running build. "
-            "You cannot read Gmail, GitHub, Notion, or Google Calendar yet."
-            if not available_tools
-            else (
-                "External integrations are available only through the provided tools. "
-                f"Available tools: {', '.join(tool['name'] for tool in available_tools)}."
-            )
+            "You cannot read Gmail, GitHub, Notion, or Google Calendar yet. "
+            if not external_tools
+            else "External integrations are available only through the provided tools. "
         )
+        integration_status += f"Available tools: {', '.join(tool['name'] for tool in available_tools)}."
 
         system_prompt = (
-            "You are NexusAI, an autonomous agent. Only claim external facts from actual tool results. "
+            "You are NexusAI, a concise personal assistant. Answer the user's exact request directly. "
+            "Do not introduce yourself unless the user asks who you are. "
+            "Do not list your capabilities unless the user explicitly asks what you can do. "
+            "Do not use Markdown formatting; write plain text only. "
+            "Only claim external facts from actual tool results. "
+            "When the user explicitly asks you to remember a stable preference or fact, use memory__save_preference. "
+            "Use memory__get_preferences when saved preferences would help answer the user. "
             "If Gmail, GitHub, Notion, or Google Calendar tools are unavailable or not connected, say so plainly. "
             "Never invent emails, issues, calendar events, Notion pages, senders, counts, or message contents. "
             f"{integration_status}"
         )
         
+        final_text_blocks = []
+        used_tools = []
+        task_status = "completed"
+
+        try:
+            async for chunk in self._process_message(message, system_prompt, available_tools, types):
+                try:
+                    payload = json.loads(chunk)
+                    if payload.get("type") == "text":
+                        final_text_blocks.append(payload.get("content", ""))
+                    elif payload.get("type") == "tool_start":
+                        used_tools.append(payload.get("tool", "unknown"))
+                    elif payload.get("type") == "tool_error":
+                        task_status = "failed"
+                except json.JSONDecodeError:
+                    pass
+                yield chunk
+        finally:
+            if message:
+                summary = "\n".join(text for text in final_text_blocks if text).strip()
+                if used_tools:
+                    summary = f"{summary}\nTools used: {', '.join(used_tools)}".strip()
+                if not summary:
+                    summary = "No final response was produced."
+                memory_manager.save_task(
+                    description=message,
+                    result_summary=summary[:2000],
+                    status=task_status,
+                )
+
+    async def _process_message(self, message: str, system_prompt: str, available_tools: list, types) -> AsyncGenerator[str, None]:
         while True:
             history = memory_manager.get_history()
             yield json.dumps({"type": "status", "content": "Thinking..."}) + "\n"

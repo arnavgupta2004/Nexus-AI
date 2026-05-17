@@ -6,7 +6,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000
 
 export default function ChatWindow({ onRequireApproval, onTaskComplete }) {
   const [messages, setMessages] = useState([
-    { role: "assistant", content: "Hi! I'm NexusAI, your autonomous agent. What would you like me to do?", type: "text" }
+    { role: "assistant", content: "Hi. What would you like me to handle?", type: "text" }
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);

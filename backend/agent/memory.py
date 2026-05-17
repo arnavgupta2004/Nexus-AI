@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
+from pathlib import Path
 
 Base = declarative_base()
 
@@ -22,7 +23,10 @@ class PreferenceRecord(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class MemoryManager:
-    def __init__(self, db_path="sqlite:///./nexus_memory.db"):
+    def __init__(self, db_path=None):
+        if db_path is None:
+            db_file = Path(__file__).resolve().parent.parent / "nexus_memory.db"
+            db_path = f"sqlite:///{db_file}"
         self.engine = create_engine(db_path, connect_args={"check_same_thread": False})
         Base.metadata.create_all(bind=self.engine)
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)

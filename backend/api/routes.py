@@ -42,7 +42,8 @@ async def chat(request: ChatRequest):
 async def memory():
     tasks = memory_manager.get_tasks()
     history = memory_manager.get_history()
-    return {"tasks": tasks, "history": history}
+    preferences = memory_manager.get_preferences()
+    return {"tasks": tasks, "history": history, "preferences": preferences}
 
 @app.get("/integrations/status")
 async def integrations_status():
